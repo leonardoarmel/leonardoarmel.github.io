@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Julia set generator</title>
+<script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.js"></script>
+<style>
+  * { box-sizing: border-box; font-family: Arial, Helvetica, sans-serif; }
+  body { background: #000; color: #fff; margin: 0; padding: 2rem 1rem; }
+  .container { max-width: 480px; margin: 0 auto; }
+  h1 { font-size: 22px; font-weight: normal; margin: 0 0 0.5rem; }
+  p.description { color: #aaa; font-size: 14px; margin: 0 0 2rem; line-height: 1.5; }
+
+  canvas { display: block; border: 1px solid #333; margin: 0 0 1rem; background: #000; width: 100%; cursor: crosshair; }
+
+  .tabs { display: flex; gap: 8px; margin-bottom: 1rem; }
+  .tabs button { flex: 1; padding: 10px; font-size: 13px; cursor: pointer; border: 1px solid #333; background: #000; color: #fff; }
+  .tabs button.active { background: #fff; color: #000; }
+
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 1rem; }
+  label { display: block; font-size: 12px; color: #aaa; margin-bottom: 4px; }
+  input[type="range"] { width: 100%; }
+  .val { font-size: 11px; color: #fff; }
+  select { width: 100%; background: #000; color: #fff; border: 1px solid #333; padding: 4px; }
+
+  button { border: 1px solid #333; background: #000; color: #fff; cursor: pointer; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-full { width: 100%; padding: 10px; font-size: 13px; }
+
+  #status, #gaStatus { border: 1px solid #333; padding: 10px; font-size: 11px; color: #aaa; min-height: 20px; margin-top: 6px; margin-bottom: 1rem; white-space: pre-wrap; }
+
+  .ga-result { cursor: pointer; padding: 10px; border: 1px solid #333; border-left: 3px solid #fff; margin-bottom: 8px; font-size: 12px; }
+  .ga-result:hover { background: #111; }
+  .ga-result .detail { font-size: 10px; color: #aaa; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Julia set generator</h1>
+  <p class="description">Generates Julia sets based on input parameters and contains a genetic algorithm to find interesting sets</p>
+
+  <canvas id="canvas"></canvas>
+
+  <div class="tabs">
+    <button id="tabManual" class="active">Manual</button>
+    <button id="tabGA">Genetic algorithm</button>
+  </div>
+
+  <!-- MANUAL PANEL -->
+  <div id="manualPanel">
+    <div class="row">
+      <div>
+        <label>Real part</label>
+        <input type="range" id="cReal" min="-0.9" max="0.4" step="0.01" value="-0.7">
+        <span class="val" id="cRealVal">-0.70</span>
+      </div>
+      <div>
+        <label>Imaginary part</label>
+        <input type="range" id="cImag" min="-0.9" max="0.9" step="0.01" value="0.27">
+        <span class="val" id="cImagVal">0.27</span>
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>Overlays</label>
+        <input type="range" id="overlayCount" min="2" max="40" step="1" value="10">
+        <span class="val" id="overlayCountVal">10</span>
+      </div>
+      <div>
+        <label>Sweep range</label>
+        <input type="range" id="sweepRange" min="0.1" max="1.5" step="0.05" value="0.6">
+        <span class="val" id="sweepRangeVal">0.60</span>
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>Vary component</label>
+        <select id="varyComponent">
+          <option value="real">Real</option>
+          <option value="imag">Imaginary</option>
+        </select>
+      </div>
+      <div>
+        <label>Iterations</label>
+        <input type="range" id="maxIter" min="20" max="150" step="5" value="50">
+        <span class="val" id="maxIterVal">50</span>
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>Contrast</label>
+        <input type="range" id="contrast" min="0.5" max="3" step="0.1" value="1.2">
+        <span class="val" id="contrastVal">1.2</span>
+      </div>
+      <div>
+        <label>Hue shift</label>
+        <input type="range" id="hueShift" min="0" max="360" step="1" value="0">
+        <span class="val" id="hueShiftVal">0</span>
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>Zoom (click canvas to pan/zoom)</label>
+        <input type="range" id="zoom" min="0" max="6" step="0.25" value="0">
+        <span class="val" id="zoomVal">1.0x</span>
+      </div>
+      <div>
+        <label>&nbsp;</label>
+        <button id="resetViewBtn" class="btn-full">Reset view</button>
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>&nbsp;</label>
+        <button id="autoSlideBtn" class="btn-full">Auto-slide</button>
+      </div>
+      <div>
+        <label>Speed</label>
+        <input type="range" id="animSpeed" min="0.5" max="3" step="0.25" value="1">
+        <span class="val" id="animSpeedVal">1.0x</span>
+      </div>
+    </div>
+
+    <button id="exportGifBtn" class="btn-full">Export current view as GIF</button>
+    <div id="gifStatus" style="min-height:16px;border:none;padding:6px 0;"></div>
+  </div>
+
+  <!-- GA PANEL -->
+  <div id="gaPanel" style="display:none;">
+    <div class="row">
+      <div>
+        <label>Population</label>
+        <input type="range" id="popSize" min="8" max="24" step="1" value="14">
+        <span class="val" id="popSizeVal">14</span>
+      </div>
+      <div>
+        <label>Generations</label>
+        <input type="range" id="numGens" min="8" max="30" step="1" value="18">
+        <span class="val" id="numGensVal">18</span>
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>Mutation rate</label>
+        <input type="range" id="mutationRate" min="0.05" max="0.6" step="0.05" value="0.25">
+        <span class="val" id="mutationRateVal">0.25</span>
+      </div>
+      <div>
+        <label>Elite ratio</label>
+        <input type="range" id="eliteRatio" min="0.05" max="0.4" step="0.05" value="0.2">
+        <span class="val" id="eliteRatioVal">0.20</span>
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>Random injection rate</label>
+        <input type="range" id="injectionRate" min="0" max="0.3" step="0.05" value="0.1">
+        <span class="val" id="injectionRateVal">0.10</span>
+      </div>
+      <div>
+        <label>Search resolution</label>
+        <input type="range" id="gaResolution" min="20" max="36" step="4" value="28">
+        <span class="val" id="gaResolutionVal">28px</span>
+      </div>
+    </div>
+
+    <button id="runGaBtn" class="btn-full" style="margin-bottom:0.75rem;">Run genetic algorithm</button>
+    <div id="gaStatus"></div>
+    <div id="gaResults"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const el = id => document.getElementById(id);
+  const canvas = el('canvas');
+  const ctx = canvas.getContext('2d');
+  const RES = 400;
+  canvas.width = RES;
+  canvas.height = RES;
+  const ESCAPE_SQ = 16;
+
+  const fullBuffer = new Uint8ClampedArray(RES * RES * 4);
+
+  let currentTab = 'manual';
+  let manualCenter = { x: 0, y: 0 };
+  let isAnimating = false;
+  let animTime = 0;
+
+  function juliaEscape(px, py, cr, ci, maxIter) {
+    let zr = px, zi = py;
+    for (let i = 0; i < maxIter; i++) {
+      const zr2 = zr * zr, zi2 = zi * zi;
+      if (zr2 + zi2 > ESCAPE_SQ) return i;
+      zi = 2 * zr * zi + ci;
+      zr = zr2 - zi2 + cr;
+    }
+    return maxIter;
+  }
+
+  function hslToRgb(h, s, l) {
+    h = ((h % 360) + 360) % 360;
+    s = Math.max(0, Math.min(100, s));
+    l = Math.max(0, Math.min(100, l));
+    const c = (1 - Math.abs(2 * (l / 100) - 1)) * (s / 100);
+    const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+    const m = (l / 100) - c / 2;
+    let r, g, b;
+    const hh = h / 60;
+    if (hh < 1) [r, g, b] = [c, x, 0];
+    else if (hh < 2) [r, g, b] = [x, c, 0];
+    else if (hh < 3) [r, g, b] = [0, c, x];
+    else if (hh < 4) [r, g, b] = [0, x, c];
+    else if (hh < 5) [r, g, b] = [x, 0, c];
+    else [r, g, b] = [c, 0, x];
+    return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)];
+  }
+
+  function computeOverlayCs(p, animT) {
+    const n = p.overlayCount;
+    const list = new Array(n);
+    const animOffset = (((animT || 0) % 1) * 2 - 1) * p.sweepRange;
+    for (let i = 0; i < n; i++) {
+      const tt = n > 1 ? (i / (n - 1)) * 2 - 1 : 0;
+      const off = tt * p.sweepRange + animOffset;
+      let cr = p.cReal, ci = p.cImag;
+      if (p.varyComponent === 'real') cr += off; else ci += off;
+      list[i] = { cr, ci };
+    }
+    return list;
+  }
+
+  function renderToBuffer(buffer, res, p, animT) {
+    const overlays = computeOverlayCs(p, animT);
+    const n = overlays.length;
+    const invN = 1 / n;
+    const zoom = p.zoom || 1;
+    const scale = 3.2 / (res * zoom);
+    const cx = p.centerX || 0, cy = p.centerY || 0;
+    const maxIter = p.maxIter;
+
+    for (let y = 0; y < res; y++) {
+      const py0 = (y - res / 2) * scale + cy;
+      for (let x = 0; x < res; x++) {
+        const px0 = (x - res / 2) * scale + cx;
+
+        let convCount = 0, hueAccum = 0;
+        for (let i = 0; i < n; i++) {
+          const o = overlays[i];
+          const iter = juliaEscape(px0, py0, o.cr, o.ci, maxIter);
+          if (iter === maxIter) convCount++;
+          hueAccum += (iter * invN / maxIter) * 360;
+        }
+
+        const idx = (y * res + x) * 4;
+        if (convCount === 0) {
+          buffer[idx] = 15; buffer[idx + 1] = 15; buffer[idx + 2] = 15;
+        } else {
+          let nc = convCount * invN;
+          nc = (nc - 0.5) * p.contrast + 0.5;
+          nc = Math.max(0, Math.min(1, nc));
+          const [r, g, b] = hslToRgb(hueAccum + p.hueShift, 60 + nc * 40, 15 + nc * 70);
+          buffer[idx] = r; buffer[idx + 1] = g; buffer[idx + 2] = b;
+        }
+        buffer[idx + 3] = 255;
+      }
+    }
+  }
+
+  function readManualState() {
+    return {
+      cReal: parseFloat(el('cReal').value),
+      cImag: parseFloat(el('cImag').value),
+      overlayCount: parseInt(el('overlayCount').value),
+      sweepRange: parseFloat(el('sweepRange').value),
+      varyComponent: el('varyComponent').value,
+      contrast: parseFloat(el('contrast').value),
+      hueShift: parseFloat(el('hueShift').value),
+      maxIter: parseInt(el('maxIter').value),
+      zoom: Math.pow(2, parseFloat(el('zoom').value)),
+      centerX: manualCenter.x,
+      centerY: manualCenter.y
+    };
+  }
+
+  function updateManualLabels() {
+    el('cRealVal').textContent = parseFloat(el('cReal').value).toFixed(2);
+    el('cImagVal').textContent = parseFloat(el('cImag').value).toFixed(2);
+    el('overlayCountVal').textContent = el('overlayCount').value;
+    el('sweepRangeVal').textContent = parseFloat(el('sweepRange').value).toFixed(2);
+    el('maxIterVal').textContent = el('maxIter').value;
+    el('contrastVal').textContent = parseFloat(el('contrast').value).toFixed(1);
+    el('hueShiftVal').textContent = Math.round(el('hueShift').value);
+    el('zoomVal').textContent = Math.pow(2, parseFloat(el('zoom').value)).toFixed(1) + 'x';
+  }
+
+  function renderManual(t) {
+    const p = readManualState();
+    renderToBuffer(fullBuffer, RES, p, t);
+    const imgData = new ImageData(fullBuffer, RES, RES);
+    ctx.putImageData(imgData, 0, 0);
+  }
+
+  function renderCurrent() {
+    updateManualLabels();
+    renderManual(isAnimating ? animTime % 1 : 0);
+  }
+
+  function animateLoop() {
+    if (!isAnimating) return;
+    const speed = parseFloat(el('animSpeed').value);
+    animTime += 0.004 * speed;
+    renderManual(animTime % 1);
+    requestAnimationFrame(animateLoop);
+  }
+
+  el('autoSlideBtn').addEventListener('click', () => {
+    isAnimating = !isAnimating;
+    el('autoSlideBtn').textContent = isAnimating ? 'Pause' : 'Auto-slide';
+    if (isAnimating) animateLoop();
+  });
+
+  canvas.addEventListener('click', (e) => {
+    if (currentTab !== 'manual') return;
+    const rect = canvas.getBoundingClientRect();
+    const nx = (e.clientX - rect.left) / rect.width - 0.5;
+    const ny = (e.clientY - rect.top) / rect.height - 0.5;
+    const zoomLevel = Math.pow(2, parseFloat(el('zoom').value));
+    const scale = 3.2 / zoomLevel;
+    manualCenter.x += nx * scale;
+    manualCenter.y += ny * scale;
+    renderCurrent();
+  });
+
+  el('resetViewBtn').addEventListener('click', () => {
+    manualCenter = { x: 0, y: 0 };
+    el('zoom').value = 0;
+    renderCurrent();
+  });
+
+  ['cReal','cImag','overlayCount','sweepRange','contrast','hueShift','maxIter','zoom'].forEach(id => {
+    el(id).addEventListener('input', renderCurrent);
+  });
+  el('varyComponent').addEventListener('change', renderCurrent);
+  el('animSpeed').addEventListener('input', () => {
+    el('animSpeedVal').textContent = parseFloat(el('animSpeed').value).toFixed(2) + 'x';
+  });
+
+  async function exportGif() {
+    const btn = el('exportGifBtn');
+    const status = el('gifStatus');
+    btn.disabled = true;
+
+    const p = readManualState();
+    const gif = new GIF({
+      workers: 4,
+      quality: 20,
+      width: RES,
+      height: RES,
+      workerScript: 'https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.worker.js'
+    });
+
+    const frameCount = 40;
+    for (let f = 0; f < frameCount; f++) {
+      renderToBuffer(fullBuffer, RES, p, f / frameCount);
+      ctx.putImageData(new ImageData(fullBuffer, RES, RES), 0, 0);
+      gif.addFrame(canvas, { delay: 60, copy: true });
+      status.textContent = 'Rendering frame ' + (f + 1) + '/' + frameCount;
+      await new Promise(r => setTimeout(r, 0));
+    }
+
+    status.textContent = 'Encoding GIF...';
+    gif.on('finished', (blob) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'julia-set.gif';
+      a.click();
+      URL.revokeObjectURL(url);
+      status.textContent = 'Downloaded.';
+      btn.disabled = false;
+      renderCurrent();
+    });
+    gif.render();
+  }
+  el('exportGifBtn').addEventListener('click', exportGif);
+
+  function setTab(tab) {
+    currentTab = tab;
+    const manualActive = tab === 'manual';
+    el('manualPanel').style.display = manualActive ? 'block' : 'none';
+    el('gaPanel').style.display = manualActive ? 'none' : 'block';
+    el('tabManual').classList.toggle('active', manualActive);
+    el('tabGA').classList.toggle('active', !manualActive);
+    if (manualActive) renderCurrent();
+  }
+  el('tabManual').addEventListener('click', () => setTab('manual'));
+  el('tabGA').addEventListener('click', () => setTab('ga'));
+
+  function evaluateFitness(ind, res) {
+    const overlays = computeOverlayCs(ind, 0);
+    const n = overlays.length;
+    const scale = 3.2 / res;
+    const hist = new Array(n + 1).fill(0);
+    const total = res * res;
+
+    for (let y = 0; y < res; y++) {
+      const py = (y - res / 2) * scale;
+      for (let x = 0; x < res; x++) {
+        const px = (x - res / 2) * scale;
+        let convCount = 0;
+        for (let i = 0; i < n; i++) {
+          const o = overlays[i];
+          const iter = juliaEscape(px, py, o.cr, o.ci, ind.maxIter);
+          if (iter === ind.maxIter) convCount++;
+        }
+        hist[convCount]++;
+      }
+    }
+
+    const boundaryFraction = 1 - (hist[0] + hist[n]) / total;
+    let entropy = 0;
+    for (let k = 0; k <= n; k++) {
+      if (hist[k] > 0) {
+        const pk = hist[k] / total;
+        entropy -= pk * Math.log(pk);
+      }
+    }
+    const maxEntropy = Math.log(n + 1);
+    const normEntropy = maxEntropy > 0 ? entropy / maxEntropy : 0;
+
+    return boundaryFraction * 70 + normEntropy * 30;
+  }
+
+  function randRange(min, max) { return Math.random() * (max - min) + min; }
+  function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+
+  function createIndividual() {
+    return {
+      overlayCount: Math.round(randRange(5, 22)),
+      sweepRange: randRange(0.2, 1.3),
+      varyComponent: Math.random() < 0.5 ? 'real' : 'imag',
+      cReal: randRange(-0.85, 0.35),
+      cImag: randRange(-0.85, 0.85),
+      maxIter: Math.round(randRange(20, 55)),
+      contrast: randRange(0.8, 2.3),
+      hueShift: randRange(0, 360)
+    };
+  }
+
+  function mutate(ind, rate) {
+    const m = { ...ind };
+    if (Math.random() < rate) m.overlayCount = clamp(Math.round(m.overlayCount + randRange(-4, 4)), 2, 30);
+    if (Math.random() < rate) m.sweepRange = clamp(m.sweepRange + randRange(-0.2, 0.2), 0.1, 1.5);
+    if (Math.random() < rate) m.cReal = clamp(m.cReal + randRange(-0.15, 0.15), -0.9, 0.4);
+    if (Math.random() < rate) m.cImag = clamp(m.cImag + randRange(-0.15, 0.15), -0.9, 0.9);
+    if (Math.random() < rate) m.maxIter = clamp(Math.round(m.maxIter + randRange(-10, 10)), 20, 90);
+    if (Math.random() < rate) m.contrast = clamp(m.contrast + randRange(-0.3, 0.3), 0.5, 3);
+    if (Math.random() < rate) m.hueShift = (m.hueShift + randRange(-40, 40) + 360) % 360;
+    if (Math.random() < rate * 0.3) m.varyComponent = m.varyComponent === 'real' ? 'imag' : 'real';
+    return m;
+  }
+
+  function paramDistance(a, b) {
+    const dO = (a.overlayCount - b.overlayCount) / 28;
+    const dS = (a.sweepRange - b.sweepRange) / 1.4;
+    const dCr = (a.cReal - b.cReal) / 1.25;
+    const dCi = (a.cImag - b.cImag) / 1.75;
+    const dM = (a.maxIter - b.maxIter) / 70;
+    const dC = (a.contrast - b.contrast) / 2.5;
+    const hd = Math.min(Math.abs(a.hueShift - b.hueShift), 360 - Math.abs(a.hueShift - b.hueShift)) / 360;
+    const dV = a.varyComponent === b.varyComponent ? 0 : 1;
+    return Math.sqrt(dO*dO + dS*dS + dCr*dCr + dCi*dCi + dM*dM + dC*dC + hd*hd + dV*dV*0.5);
+  }
+
+  function selectDiverseTop(scored, count) {
+    const poolSize = Math.max(count, Math.ceil(scored.length * 0.6));
+    const pool = scored.slice(0, poolSize);
+    const selected = [pool[0]];
+    const remaining = pool.slice(1);
+    while (selected.length < count && remaining.length > 0) {
+      let maxMinDist = -1, maxIdx = 0;
+      for (let j = 0; j < remaining.length; j++) {
+        const minDist = Math.min(...selected.map(s => paramDistance(remaining[j].ind, s.ind)));
+        if (minDist > maxMinDist) { maxMinDist = minDist; maxIdx = j; }
+      }
+      selected.push(remaining[maxIdx]);
+      remaining.splice(maxIdx, 1);
+    }
+    return selected;
+  }
+
+  let gaBestResults = [];
+
+  async function runGA() {
+    const btn = el('runGaBtn');
+    const status = el('gaStatus');
+    btn.disabled = true;
+
+    const POP = parseInt(el('popSize').value);
+    const GENS = parseInt(el('numGens').value);
+    const MUT_RATE = parseFloat(el('mutationRate').value);
+    const ELITE_RATIO = parseFloat(el('eliteRatio').value);
+    const INJECT_RATE = parseFloat(el('injectionRate').value);
+    const GA_RES = parseInt(el('gaResolution').value);
+    const startTime = Date.now();
+
+    let population = Array.from({ length: POP }, createIndividual);
+
+    for (let gen = 0; gen < GENS; gen++) {
+      const scored = population.map(ind => ({ ind, fitness: evaluateFitness(ind, GA_RES) }));
+      scored.sort((a, b) => b.fitness - a.fitness);
+
+      gaBestResults = selectDiverseTop(scored, 5);
+      updateGaResults();
+
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      status.textContent = 'Gen ' + (gen + 1) + '/' + GENS + ' | best fitness: ' + scored[0].fitness.toFixed(1) + ' | ' + elapsed + 's elapsed';
+
+      const eliteCount = Math.max(2, Math.floor(POP * ELITE_RATIO));
+      const nextPop = [];
+      for (let i = 0; i < eliteCount; i++) nextPop.push(scored[i].ind);
+      while (nextPop.length < POP) {
+        if (Math.random() < INJECT_RATE) {
+          nextPop.push(createIndividual());
+        } else {
+          const parent = scored[Math.floor(Math.random() * Math.min(8, scored.length))].ind;
+          nextPop.push(mutate(parent, MUT_RATE));
+        }
+      }
+      population = nextPop;
+
+      await new Promise(r => setTimeout(r, 0));
+    }
+
+    btn.disabled = false;
+  }
+
+  function updateGaResults() {
+    const div = el('gaResults');
+    div.innerHTML = gaBestResults.map((item, i) => {
+      const ind = item.ind;
+      return '<div data-idx="' + i + '" class="ga-result">' +
+        '<strong>#' + (i + 1) + '</strong> fitness ' + item.fitness.toFixed(1) +
+        '<div class="detail">O:' + ind.overlayCount + ' S:' + ind.sweepRange.toFixed(2) +
+        ' vary:' + ind.varyComponent + ' c:(' + ind.cReal.toFixed(2) + ', ' + ind.cImag.toFixed(2) + 'i)' +
+        ' iter:' + ind.maxIter + ' contrast:' + ind.contrast.toFixed(2) + ' hue:' + Math.round(ind.hueShift) + '</div>' +
+        '</div>';
+    }).join('');
+    div.querySelectorAll('.ga-result').forEach(node => {
+      node.addEventListener('click', () => applyGaResult(parseInt(node.dataset.idx)));
+    });
+  }
+
+  function applyGaResult(idx) {
+    const ind = gaBestResults[idx].ind;
+    el('overlayCount').value = ind.overlayCount;
+    el('sweepRange').value = ind.sweepRange;
+    el('varyComponent').value = ind.varyComponent;
+    el('cReal').value = ind.cReal;
+    el('cImag').value = ind.cImag;
+    el('maxIter').value = ind.maxIter;
+    el('contrast').value = ind.contrast;
+    el('hueShift').value = ind.hueShift;
+    manualCenter = { x: 0, y: 0 };
+    el('zoom').value = 0;
+
+    setTab('manual');
+    if (!isAnimating) {
+      isAnimating = true;
+      el('autoSlideBtn').textContent = 'Pause';
+      animateLoop();
+    }
+  }
+
+  el('runGaBtn').addEventListener('click', runGA);
+  el('popSize').addEventListener('input', () => el('popSizeVal').textContent = el('popSize').value);
+  el('numGens').addEventListener('input', () => el('numGensVal').textContent = el('numGens').value);
+  el('mutationRate').addEventListener('input', () => el('mutationRateVal').textContent = parseFloat(el('mutationRate').value).toFixed(2));
+  el('eliteRatio').addEventListener('input', () => el('eliteRatioVal').textContent = parseFloat(el('eliteRatio').value).toFixed(2));
+  el('injectionRate').addEventListener('input', () => el('injectionRateVal').textContent = parseFloat(el('injectionRate').value).toFixed(2));
+  el('gaResolution').addEventListener('input', () => el('gaResolutionVal').textContent = el('gaResolution').value + 'px');
+
+  renderCurrent();
+})();
+</script>
+</body>
+</html>
